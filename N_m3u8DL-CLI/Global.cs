@@ -1,4 +1,5 @@
-﻿using Newtonsoft.Json;
+﻿using BrotliSharpLib;
+using Newtonsoft.Json;
 using System;
 using System.Collections;
 using System.Collections.Generic;
@@ -24,14 +25,17 @@ namespace N_m3u8DL_CLI
         public static string AUDIO_TYPE = "";
         public static bool HadReadInfo = false;
         private static bool noProxy = false;
+        private static string useProxyAddress = "";
 
         public static bool ShouldStop { get => shouldStop; set => shouldStop = value; }
         public static bool NoProxy { get => noProxy; set => noProxy = value; }
+        public static string UseProxyAddress { get => useProxyAddress; set => useProxyAddress = value; }
 
 
         /*===============================================================================*/
-        static string nowVer = "2.7.5";
-        static string nowDate = "20201014";
+        static Version ver = System.Reflection.Assembly.GetExecutingAssembly().GetName().Version;
+        static string nowVer = $"{ver.Major}.{ver.Minor}.{ver.Build}";
+        static string nowDate = "20210325";
         public static void WriteInit()
         {
             Console.Clear();
@@ -56,8 +60,8 @@ namespace N_m3u8DL_CLI
                     Console.Title = string.Format(strings.newerVisionDetected, latestVer);
                     try
                     {
-                        //尝试下载新版本(去码云)
-                        string url = $"https://gitee.com/nilaoda/N_m3u8DL-CLI/raw/master/N_m3u8DL-CLI_v{latestVer}.exe";
+                        //尝试下载新版本
+                        string url = $"https://mirror.ghproxy.com/https://github.com/nilaoda/N_m3u8DL-CLI/releases/download/{latestVer}/N_m3u8DL-CLI_v{latestVer}.exe";
                         if (File.Exists(Path.Combine(Path.GetDirectoryName(Process.GetCurrentProcess().MainModule.FileName), $"N_m3u8DL-CLI_v{latestVer}.exe")))
                         {
                             Console.Title = string.Format(strings.newerVerisonDownloaded, latestVer);
@@ -101,23 +105,34 @@ namespace N_m3u8DL_CLI
         public static string GetWebSource(String url, string headers = "", int TimeOut = 60000)
         {
             string htmlCode = string.Empty;
-            for(int i = 0; i < 10; i++)
+            for (int i = 0; i < 5; i++)
             {
                 try
                 {
+                reProcess:
                     HttpWebRequest webRequest = (System.Net.HttpWebRequest)System.Net.WebRequest.Create(url);
                     webRequest.Method = "GET";
-                    if (NoProxy) webRequest.Proxy = null;
-                    webRequest.UserAgent = "Mozilla/4.0";
-                    webRequest.Headers.Add("Accept-Encoding", "gzip, deflate");
+                    if (NoProxy)
+                    {
+                        webRequest.Proxy = null;
+                    }
+                    else if (UseProxyAddress != "")
+                    {
+                        WebProxy proxy = new WebProxy(UseProxyAddress);
+                        //proxy.Credentials = new NetworkCredential(username, password);
+                        webRequest.Proxy = proxy;
+                    }
+                    webRequest.UserAgent = "Mozilla/5.0 (Windows NT 10.0; WOW64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/78.0.3904.108 Safari/537.36";
+                    webRequest.Accept = "*/*";
+                    webRequest.Headers.Add("Accept-Encoding", "gzip, deflate, br");
                     webRequest.Timeout = TimeOut;  //设置超时
                     webRequest.KeepAlive = false;
-                    webRequest.AllowAutoRedirect = true;  //自动跳转
+                    webRequest.AllowAutoRedirect = false; //手动处理重定向，否则会丢失Referer
                     if (url.Contains("pcvideo") && url.Contains(".titan.mgtv.com"))
                     {
                         webRequest.UserAgent = "";
                         if (!url.Contains("/internettv/"))
-                            webRequest.Referer = "https://player.mgtv.com/mgtv_v6_player/PlayerCore.swf";
+                            webRequest.Referer = "https://www.mgtv.com";
                         webRequest.Headers.Add("Cookie", "MQGUID");
                     }
                     //添加headers
@@ -145,6 +160,18 @@ namespace N_m3u8DL_CLI
                         }
                     }
                     HttpWebResponse webResponse = (HttpWebResponse)webRequest.GetResponse();
+
+                    //302
+                    if (webResponse.Headers.Get("Location") != null)
+                    {
+                        url = webResponse.Headers.Get("Location");
+                        webResponse.Close();
+                        goto reProcess;
+                    }
+
+                    //文件过大则认为不是m3u8
+                    if (webResponse.ContentLength != -1 && webResponse.ContentLength > 50 * 1024 * 1024) return "";
+
                     if (webResponse.ContentEncoding != null
                         && webResponse.ContentEncoding.ToLower() == "gzip") //如果使用了GZip则先解压
                     {
@@ -154,6 +181,20 @@ namespace N_m3u8DL_CLI
                                 new System.IO.Compression.GZipStream(streamReceive, System.IO.Compression.CompressionMode.Decompress))
                             {
                                 using (StreamReader sr = new StreamReader(zipStream, Encoding.UTF8))
+                                {
+                                    htmlCode = sr.ReadToEnd();
+                                }
+                            }
+                        }
+                    }
+                    else if (webResponse.ContentEncoding != null
+                        && webResponse.ContentEncoding.ToLower() == "br") //如果使用了Brotli则先解压
+                    {
+                        using (Stream streamReceive = webResponse.GetResponseStream())
+                        {
+                            using (var bs = new BrotliStream(streamReceive, CompressionMode.Decompress))
+                            {
+                                using (StreamReader sr = new StreamReader(bs, Encoding.UTF8))
                                 {
                                     htmlCode = sr.ReadToEnd();
                                 }
@@ -183,6 +224,7 @@ namespace N_m3u8DL_CLI
                 }
                 catch (Exception e)  //捕获所有异常
                 {
+                    LOGGER.WriteLine(e.Message);
                     LOGGER.WriteLineError(e.Message);
                     Thread.Sleep(1000); //1秒后重试
                     continue;
@@ -355,7 +397,16 @@ namespace N_m3u8DL_CLI
                 string redirectUrl;
                 WebRequest myRequest = WebRequest.Create(url);
                 myRequest.Timeout = timeout;
-                if (NoProxy) myRequest.Proxy = null;
+                if (NoProxy)
+                {
+                    myRequest.Proxy = null;
+                }
+                else if (UseProxyAddress != "")
+                {
+                    WebProxy proxy = new WebProxy(UseProxyAddress);
+                    //proxy.Credentials = new NetworkCredential(username, password);
+                    myRequest.Proxy = proxy;
+                }
                 //添加headers
                 if (headers != "")
                 {
@@ -402,14 +453,26 @@ namespace N_m3u8DL_CLI
                 }
             }
 
+        reProcess:
             byte[] arraryByte;
             HttpWebRequest req = (HttpWebRequest)WebRequest.Create(url);
             req.Method = "GET";
             req.Timeout = timeOut;
             req.ReadWriteTimeout = timeOut; //重要
-            if (NoProxy) req.Proxy = null;
+            req.AllowAutoRedirect = false; //手动处理重定向，否则会丢失Referer
+            if (NoProxy)
+            {
+                req.Proxy = null;
+            }
+            else if (UseProxyAddress != "")
+            {
+                WebProxy proxy = new WebProxy(UseProxyAddress);
+                //proxy.Credentials = new NetworkCredential(username, password);
+                req.Proxy = proxy;
+            }
             req.Headers.Add("Accept-Encoding", "gzip, deflate");
             req.Accept = "*/*";
+            req.UserAgent = "Mozilla/5.0 (Windows NT 10.0; WOW64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/78.0.3904.108 Safari/537.36";
             //添加headers
             if (headers != "")
             {
@@ -437,6 +500,13 @@ namespace N_m3u8DL_CLI
 
             using (HttpWebResponse wr = (HttpWebResponse)req.GetResponse())
             {
+                //302
+                if (wr.Headers.Get("Location") != null)
+                {
+                    url = wr.Headers.Get("Location");
+                    wr.Close();
+                    goto reProcess;
+                }
                 if (wr.ContentEncoding != null && wr.ContentEncoding.ToLower() == "gzip") //如果使用了GZip则先解压
                 {
                     using (Stream streamReceive = wr.GetResponseStream())
@@ -490,6 +560,8 @@ namespace N_m3u8DL_CLI
         /// </summary>
         public static void HttpDownloadFile(string url, string path, int timeOut = 20000, string headers = "", long startByte = 0, long expectByte = -1)
         {
+            int retry = 0;
+            reDownload:
             try
             {
                 if (File.Exists(path))
@@ -497,24 +569,38 @@ namespace N_m3u8DL_CLI
                 if (shouldStop)
                     return;
 
+                reProcess:
                 HttpWebRequest request = WebRequest.Create(url) as HttpWebRequest;
                 request.Timeout = timeOut;
                 request.ReadWriteTimeout = timeOut; //重要
-                request.AllowAutoRedirect = true;
+                request.AllowAutoRedirect = false; //手动处理重定向，否则会丢失Referer
                 request.KeepAlive = false;
                 request.Method = "GET";
-                if (NoProxy) request.Proxy = null;
+                if (NoProxy)
+                {
+                    request.Proxy = null;
+                }
+                else if (UseProxyAddress != "")
+                {
+                    WebProxy proxy = new WebProxy(UseProxyAddress);
+                    //proxy.Credentials = new NetworkCredential(username, password);
+                    request.Proxy = proxy;
+                }
                 if (url.Contains("data.video.iqiyi.com"))
                     request.UserAgent = "QYPlayer/Android/4.4.5;NetType/3G;QTP/1.1.4.3";
                 else if (url.Contains("pcvideo") && url.Contains(".titan.mgtv.com"))
                 {
                     request.UserAgent = "";
                     if (!url.Contains("/internettv/"))
-                        request.Referer = "https://player.mgtv.com/mgtv_v6_player/PlayerCore.swf";
+                        request.Referer = "https://www.mgtv.com";
                     request.Headers.Add("Cookie", "MQGUID");
                 }
+                else if (url.Contains(".xboku.com/")) //独播库
+                {
+                    request.Referer = "https://my.duboku.vip/static/player/videojs.html";
+                }
                 else
-                    request.UserAgent = "VLC/2.2.1 LibVLC/2.2.1";
+                    request.UserAgent = "Mozilla/5.0 (Windows NT 10.0; WOW64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/78.0.3904.108 Safari/537.36";
                 //下载部分字节
                 if (expectByte != -1)
                     request.AddRange("bytes", startByte, startByte + expectByte - 1);
@@ -548,6 +634,13 @@ namespace N_m3u8DL_CLI
                 bool pngHeader = false; //PNG HEADER检测
                 using (var response = (HttpWebResponse)request.GetResponse())
                 {
+                    //302
+                    if (response.Headers.Get("Location") != null)
+                    {
+                        url = response.Headers.Get("Location");
+                        response.Close();
+                        goto reProcess;
+                    }
                     using (var responseStream = response.GetResponseStream())
                     {
                         using (var stream = new FileStream(path, FileMode.Create, FileAccess.Write, FileShare.Write))
@@ -556,9 +649,16 @@ namespace N_m3u8DL_CLI
                             totalLen = response.ContentLength;
                             byte[] bArr = new byte[1024];
                             int size = responseStream.Read(bArr, 0, (int)bArr.Length);
-                            if (!pngHeader && size > 3 && 137 == bArr[0] && 80 == bArr[1] && 78 == bArr[2] && 71 == bArr[3]) ;
+                            if (!pngHeader && size > 3 && 137 == bArr[0] && 80 == bArr[1] && 78 == bArr[2] && 71 == bArr[3])
                             {
                                 pngHeader = true;
+                            }
+                            //GIF HEADER检测
+                            if (!pngHeader && size > 3 && 0x47 == bArr[0] && 0x49 == bArr[1] && 0x46 == bArr[2] && 0x38 == bArr[3])
+                            {
+                                bArr = bArr.Skip(42).ToArray();
+                                size -= 42;
+                                downLen += 42;
                             }
                             while (size > 0)
                             {
@@ -582,15 +682,22 @@ namespace N_m3u8DL_CLI
                 }
                 if (shouldStop)
                     try { File.Delete(path); } catch (Exception) { }
-                if (totalLen != -1 && downLen != totalLen) 
+                if (totalLen != -1 && downLen != totalLen)
                     try { File.Delete(path); } catch (Exception) { }
                 if (pngHeader)
                     TrySkipPngHeader(path);
+
             }
             catch (Exception e)
             {
                 LOGGER.WriteLineError("DOWN: " + e.Message + " " + url);
                 try { File.Delete(path); } catch (Exception) { }
+                if (retry++ < 3)
+                {
+                    Thread.Sleep(1000);
+                    LOGGER.WriteLineError($"DOWN: AUTO RETRY {retry}/3 " + url);
+                    goto reDownload;
+                }
             }
         }
 
@@ -605,31 +712,31 @@ namespace N_m3u8DL_CLI
             {
                 return;
             }
-            else if (137 == u[0] && 80 == u[1] && 78 == u[2] && 71 == u[3] && 96 == u[118] && 130 == u[119])
+            else if (u.Length > 120 && 137 == u[0] && 80 == u[1] && 78 == u[2] && 71 == u[3] && 96 == u[118] && 130 == u[119])
             {
                 u = u.Skip(120).ToArray();
             }
-            else if (137 == u[0] && 80 == u[1] && 78 == u[2] && 71 == u[3] && 96 == u[6100] && 130 == u[6101])
+            else if (u.Length > 6102 && 137 == u[0] && 80 == u[1] && 78 == u[2] && 71 == u[3] && 96 == u[6100] && 130 == u[6101])
             {
                 u = u.Skip(6102).ToArray();
             }
-            else if (137 == u[0] && 80 == u[1] && 78 == u[2] && 71 == u[3] && 96 == u[67] && 130 == u[68])
+            else if (u.Length > 69 && 137 == u[0] && 80 == u[1] && 78 == u[2] && 71 == u[3] && 96 == u[67] && 130 == u[68])
             {
                 u = u.Skip(69).ToArray();
             }
-            else if (137 == u[0] && 80 == u[1] && 78 == u[2] && 71 == u[3] && 96 == u[769] && 130 == u[770])
+            else if (u.Length > 771 && 137 == u[0] && 80 == u[1] && 78 == u[2] && 71 == u[3] && 96 == u[769] && 130 == u[770])
             {
                 u = u.Skip(771).ToArray();
             }
-            else if (137 == u[0] && 80 == u[1] && 78 == u[2] && 71 == u[3])
+            else if (u.Length > 4 && 137 == u[0] && 80 == u[1] && 78 == u[2] && 71 == u[3])
             {
-                //确定是PNG但是需要手动查询结尾标记(0x60 0x82 0x47)
+                //确定是PNG但是需要手动查询结尾标记 0x47 出现两次
                 int skip = 0;
-                for (int i = 4; i < u.Length - 3; i++)
+                for (int i = 4; i < u.Length - 188 * 2 - 4; i++)
                 {
-                    if (u[i] == 0x60 && u[i + 1] == 0x82 && u[i + 2] == 0x47)
+                    if (u[i] == 0x47 && u[i + 188] == 0x47 && u[i + 188 + 188] == 0x47)
                     {
-                        skip = i + 2;
+                        skip = i;
                         break;
                     }
                 }
@@ -800,9 +907,15 @@ namespace N_m3u8DL_CLI
                     }
                 }
 
-                if(res.Contains("Audio aac"))
+                if (res.Contains("Audio aac"))
                 {
                     FFmpeg.UseAACFilter = true;
+                }
+
+                //有非AAC音轨则关闭UseAACFilter
+                if (res.Contains("Audio") && !res.Contains("Audio aac"))
+                {
+                    FFmpeg.UseAACFilter = false;
                 }
 
                 if ((VIDEO_TYPE == "" || VIDEO_TYPE == "IGNORE") && res.Contains("Audio eac3")) 
@@ -1059,7 +1172,16 @@ namespace N_m3u8DL_CLI
             protected override WebRequest GetWebRequest(Uri address)
             {
                 var wr = (HttpWebRequest)base.GetWebRequest(address);
-                if (NoProxy) wr.Proxy = null;
+                if (NoProxy)
+                {
+                    wr.Proxy = null;
+                }
+                else if (UseProxyAddress != "")
+                {
+                    WebProxy proxy = new WebProxy(UseProxyAddress);
+                    //proxy.Credentials = new NetworkCredential(username, password);
+                    wr.Proxy = proxy;
+                }
                 if (setRange)
                     wr.AddRange(this.from, this.to);
                 if (setTimeout)

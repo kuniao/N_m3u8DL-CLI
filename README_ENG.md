@@ -20,7 +20,7 @@ Supports:
   * Network driver on Windows OS
   * Alternative audio/video track
   * Mux without video track
-  * Auto use system proxy
+  * Costom HTTP proxy or Use system proxy
   * Optimization for Chinese streaming platform
   
   ![ScreenShot](https://nilaoda.github.io/N_m3u8DL-CLI/source/images/%E7%9B%B4%E6%8E%A5%E4%BD%BF%E7%94%A8.gif)  
@@ -47,6 +47,7 @@ N_m3u8DL-CLI.exe <URL|JSON|FILE> [OPTIONS]
     --downloadRange Range       Set range for a video
     --stopSpeed  Number         Speed below this, retry(KB/s)
     --maxSpeed   Number         Set max download speed(KB/s)
+    --proxyAddress http://xx    Set HTTP Proxy, like http://127.0.0.1:8080
     --enableDelAfterDone        Enable delete clips after download completed
     --enableMuxFastStart        Enable fast start for mp4
     --enableBinaryMerge         Enable use binary merge instead ffmpeg
@@ -60,3 +61,6 @@ N_m3u8DL-CLI.exe <URL|JSON|FILE> [OPTIONS]
   
 ## Document
   https://nilaoda.github.io/N_m3u8DL-CLI/
+
+## Chit-chat
+https://discord.gg/W5tvcRJDPs

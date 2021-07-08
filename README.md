@@ -18,15 +18,14 @@
 本项目已与2019年10月9日开源，采用MIT许可证，各取所需。
 
 # 关于跨平台
-~~本项目已通过`.NET Core`实现跨平台，理论支持Mac、Linux、Windows等平台，请移步：https://github.com/nilaoda/N_m3u8DL-CLI_Core~~
-
-暂时放弃跨平台（很多API需要重写才能实现功能，日后有空再维护）
+搁置了
 
 # N_m3u8DL-CLI
 一个**简单易用的**m3u8下载器，下载地址：https://github.com/nilaoda/N_m3u8DL-CLI/releases  
 
 支持下载m3u8链接或文件为`mp4`或`ts`格式，并提供丰富的命令行选项。
   * **不支持**优酷视频解密
+  * **不支持**气球云视频解密
   * 支持`AES-128-CBC`加密自动解密
   * 支持多线程下载
   * 支持下载限速
@@ -39,7 +38,8 @@
   * 支持下载路径为网络驱动器的情况
   * 支持下载外挂字幕轨道、音频轨道
   * 支持仅合并为音频
-  * 自动使用系统代理（可禁止）
+  * 支持设置特定http代理
+  * 支持自动使用系统代理（默认行为, 可禁止）
   * 提供SimpleG简易的`GUI`生成常用参数
 
 
@@ -48,7 +48,7 @@
 
 # 命令行选项
 ```
-N_m3u8DL-CLI.exe <URL|JSON|FILE> [OPTIONS]  
+N_m3u8DL-CLI.exe <URL|File|JSON> [OPTIONS]  
 
     --workDir    Directory      设定程序工作目录
     --saveName   Filename       设定存储文件名(不包括后缀)
@@ -66,6 +66,7 @@ N_m3u8DL-CLI.exe <URL|JSON|FILE> [OPTIONS]
     --liveRecDur HH:MM:SS       直播录制时，达到此长度自动退出软件
     --stopSpeed  Number         当速度低于此值时，重试(单位为KB/s)
     --maxSpeed   Number         设置下载速度上限(单位为KB/s)
+    --proxyAddress http://xx    设置HTTP代理, 如 http://127.0.0.1:8080
     --enableDelAfterDone        开启下载后删除临时文件夹的功能
     --enableMuxFastStart        开启混流mp4的FastStart特性
     --enableBinaryMerge         开启二进制合并分片
@@ -80,5 +81,8 @@ N_m3u8DL-CLI.exe <URL|JSON|FILE> [OPTIONS]
 # 用户文档
 https://nilaoda.github.io/N_m3u8DL-CLI/
 
+# 聊聊
+https://discord.gg/W5tvcRJDPs
+
 # 赞赏
-https://nilaoda.github.io/N_m3u8DL-CLI/source/images/alipay.png
+![Wow](https://nilaoda.github.io/N_m3u8DL-CLI/source/images/alipay.png)
